@@ -21,6 +21,7 @@
  *                                                                         *
  ***************************************************************************/
 """
+from .error_dialog import ErrorDialog
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication
 from qgis.core import QgsVectorLayer, QgsMessageLog
 from qgis.gui import QgsMapToolIdentifyFeature, QgsMapToolIdentify
@@ -41,6 +42,11 @@ class selectTool(QgsMapToolIdentifyFeature):
         self.layer = self.iface.activeLayer()
         QgsMapToolIdentifyFeature.__init__(self, self.canvas, self.layer)
         self.iface.currentLayerChanged.connect(self.active_changed)
+        #Para adicionar so adicionar uma nova linha aqui em baixo,
+        #botando 'NOME_DA_CAMADA':'NOME_DO_ATRIBUTO',
+        self.atributes = {
+            'Blocos Exploratórios':'COD_BLOCO',
+        } 
         
     def active_changed(self, layer):
         self.layer.removeSelection()
@@ -52,9 +58,17 @@ class selectTool(QgsMapToolIdentifyFeature):
         self.layer.removeSelection()
         found_features = self.identify(event.x(), event.y(), [self.layer], QgsMapToolIdentify.TopDownAll)
         self.layer.selectByIds([f.mFeature.id() for f in found_features], QgsVectorLayer.AddToSelection)
+        if found_features == []:
+            my_dialog = ErrorDialog() 
+            my_dialog.exec_()
         for f in found_features:
-            d = documentosDialog(f.mFeature['COD_BLOCO'])#Para alterar o atributo da feição, so alterar dentro das aspas
-            d.exec_()
+            d = documentosDialog(f.mFeature[self.atributes[self.layer.name()]])#Para alterar o atributo da feição, so alterar dentro das aspas
+            if d.docs:
+                d.exec_()
+            else:
+                my_dialog = ErrorDialog() 
+                my_dialog.exec_()
+
             
         
     def deactivate(self):

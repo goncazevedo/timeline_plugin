@@ -24,11 +24,11 @@
 
 import os
 
-import os
 
 from PyQt5.QtCore import QFileInfo, QSize
 from PyQt5.QtGui import QPixmap
 import xlrd
+from .error_dialog import ErrorDialog
 
 from qgis.PyQt.QtGui import QFont, QBrush, QColor, QPainter, QPen
 from qgis.PyQt import QtWidgets
@@ -89,17 +89,23 @@ class documentosDialog(QtWidgets.QDialog, FORM_CLASS):
 		QgsMessageLog.logMessage("const","plugin")
 		self.docs = {}
 		self.id = id
-		self.currentYear = 1
+		self.currentYear = 0
 		self.prevButton = ImageButton(QPixmap(QgsApplication.qgisSettingsDirPath()+"python\\plugins\\documents\\prev.png"))
 		self.nextButton = ImageButton(QPixmap(QgsApplication.qgisSettingsDirPath()+"python\\plugins\\documents\\next.png"))
-		self.nextButton.setFixedWidth(53)
 		self.prevButton.setFixedWidth(53)
+		self.nextButton.setFixedWidth(53)
 		self.prevButton.clicked.connect(self.prev_year)
 		self.nextButton.clicked.connect(self.next_year)
+		self.prevEventButton = ImageButton(QPixmap(QgsApplication.qgisSettingsDirPath()+"python\\plugins\\documents\\prev.png"))
+		self.nextEventButton = ImageButton(QPixmap(QgsApplication.qgisSettingsDirPath()+"python\\plugins\\documents\\next.png"))
+		self.prevEventButton.setFixedWidth(53)
+		self.nextEventButton.setFixedWidth(53)
+		self.prevEventButton.clicked.connect(self.prev_year)
+		self.nextEventButton.clicked.connect(self.next_year)
 		self.setupUi(self)
 		self.populate_treeview()
 		self.create_timeline()
-		self.listWidget.itemChanged.connect(lambda: self.update_timeline())
+		self.listWidget.itemChanged.connect(self.update_timeline)
 
 	def populate_treeview(self):
 		
@@ -112,7 +118,7 @@ class documentosDialog(QtWidgets.QDialog, FORM_CLASS):
 		for value, id in zip(filters, ids):
 			if (value.value not in cells) and (value.value != "DETALHAMENTO") and id.value == self.id:
 				cells.append(value.value)
-		print(ids)
+
 		for cell in cells:
 			item = QtWidgets.QListWidgetItem(cell, self.listWidget)
 			item.setFlags(item.flags() or Qt.ItemIsUserCheckable)
@@ -139,17 +145,23 @@ class documentosDialog(QtWidgets.QDialog, FORM_CLASS):
 					self.docs[year][month][section][row[3].value] = []
 				self.docs[year][month][section][row[3].value].append(Document(row[7].value,row[1].value))
 		self.docs = dict(sorted(self.docs.items()))
-		timeline = QtWidgets.QWidget()
-		timeline.setLayout(QtWidgets.QHBoxLayout())
+		if self.docs:
+			docs_timeline = QtWidgets.QWidget()
+			docs_timeline.setLayout(QtWidgets.QHBoxLayout())
+			docs_timeline.layout().addWidget(self.prevButton)
+			docs_timeline.layout().addWidget(self.create_year(False))
+			docs_timeline.layout().addWidget(self.nextButton)
+   
+			events_timeline = QtWidgets.QWidget()
+			events_timeline.setLayout(QtWidgets.QHBoxLayout())
+			events_timeline.layout().addWidget(self.prevEventButton)
+			events_timeline.layout().addWidget(self.create_year(True))
+			events_timeline.layout().addWidget(self.nextEventButton)
 
-		timeline.layout().addWidget(self.prevButton)
-		timeline.layout().addWidget(self.create_year())
-		timeline.layout().addWidget(self.nextButton)
+			self.scrollAreaDocs.setWidget(docs_timeline)
+			self.scrollAreaEvents.setWidget(events_timeline)
 
-		self.scrollArea.setWidget(timeline)
-
-
-	def create_year(self):
+	def create_year(self, events):
 		yearNumber = list(self.docs.keys())[self.currentYear]
 		year = QtWidgets.QWidget()
 		year.setLayout(QtWidgets.QVBoxLayout())
@@ -162,7 +174,7 @@ class documentosDialog(QtWidgets.QDialog, FORM_CLASS):
 		line.layout().setContentsMargins(0, 0, 0, 0)
 		
 		for monthNumber in range(12):
-			month = self.create_month(monthNumber, yearNumber)
+			month = self.create_month(monthNumber, yearNumber, events)
 			line.layout().addWidget(month)
    		
 		label = QtWidgets.QLabel(str(yearNumber))
@@ -174,10 +186,13 @@ class documentosDialog(QtWidgets.QDialog, FORM_CLASS):
 
 		return year
 
-	def create_month(self, monthNumber, yearNumber):
+	def create_month(self, monthNumber, yearNumber, events):
 		docButtons = []
 		for i in range(0,3):
-			docButtons.append(self.create_buttons(monthNumber+1, i,yearNumber))
+			if events:
+				docButtons.append(self.create_events(monthNumber+1, i,yearNumber))
+			else:
+				docButtons.append(self.create_buttons(monthNumber+1, i,yearNumber))
     			
 					
 		month = QtWidgets.QWidget()
@@ -270,27 +285,69 @@ class documentosDialog(QtWidgets.QDialog, FORM_CLASS):
 				if hasButton:
 					return docButton
 		return None
+
+	def create_events(self, month, section, year):
+		docButton = QtWidgets.QWidget()
+		#docButton.setFixedWidth(10)
+		docButton.setLayout(QtWidgets.QVBoxLayout())
+		docButton.layout().setSpacing(0)  # No Spacing
+		docButton.layout().setContentsMargins(0, 0, 0, 0)
+		docButton.layout().addStretch(1)
+		hasButton = False
+		if month in self.docs[year].keys():
+			if section in self.docs[year][month].keys():
+				for i in range(self.listWidget.count()):
+					docBlock = self.listWidget.item(i)
+					if docBlock.checkState() and docBlock.text() in self.docs[year][month][section].keys():
+						for doc in self.docs[year][month][section][docBlock.text()]:
+							button = QtWidgets.QPushButton()
+							button.setFixedWidth(30)
+							button.setEnabled(False)
+							button.setToolTip(doc.title)
+							docButton.layout().addWidget(button, alignment=Qt.AlignHCenter)
+							hasButton = True
+				if hasButton:
+					return docButton
+		return None
 	
 	def next_year(self):
 		self.currentYear += 1
 		self.update_timeline()
 		if self.currentYear == len(self.docs.keys())-1:
-				self.nextButton.setEnabled(False)
+			self.nextButton.setEnabled(False)
+			self.nextEventButton.setEnabled(False)
 		elif self.currentYear == 1:
-				self.prevButton.setEnabled(True)
+			self.prevButton.setEnabled(True)
+			self.prevEventButton.setEnabled(True)
 
 	def prev_year(self):
+		if self.currentYear == 0:
+			return
 		self.currentYear -= 1
 		self.update_timeline()
 		if self.currentYear == len(self.docs.keys())-2:
-				self.nextButton.setEnabled(True)
-		elif self.currentYear == 0:
-				self.prevButton.setEnabled(False)
-	
+			self.nextButton.setEnabled(True)
+			self.nextEventButton.setEnabled(True)
+		elif self.currentYear <= 0:
+			self.prevButton.setEnabled(False)
+			self.prevEventButton.setEnabled(False)
+
 	def update_timeline(self):
-		w = self.scrollArea.takeWidget()
+		self.update_docs()
+		self.update_events()
+ 
+	def update_docs(self):
+		w = self.scrollAreaDocs.takeWidget()
 		w.layout().itemAt(1).widget().hide()
-		w.layout().replaceWidget(w.layout().itemAt(1).widget(),self.create_year())
-		self.scrollArea.setWidget(w)
-		self.scrollArea.verticalScrollBar().setValue(
-			self.scrollArea.verticalScrollBar().maximum())
+		w.layout().replaceWidget(w.layout().itemAt(1).widget(),self.create_year(False))
+		self.scrollAreaDocs.setWidget(w)
+		self.scrollAreaDocs.verticalScrollBar().setValue(
+			self.scrollAreaDocs.verticalScrollBar().maximum())
+	
+	def update_events(self):
+		w = self.scrollAreaEvents.takeWidget()
+		w.layout().itemAt(1).widget().hide()
+		w.layout().replaceWidget(w.layout().itemAt(1).widget(),self.create_year(True))
+		self.scrollAreaEvents.setWidget(w)
+		self.scrollAreaEvents.verticalScrollBar().setValue(
+			self.scrollAreaEvents.verticalScrollBar().maximum())
